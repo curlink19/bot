@@ -1,0 +1,2 @@
+admins = list()
+phrases = list()
