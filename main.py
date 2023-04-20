@@ -1,4 +1,5 @@
 from _token._token import TOKEN, PASSWORD
+import db.db
 from db.db import admins, phrases
 from utils.utils import put_text
 
@@ -33,9 +34,9 @@ async def handle_file(
         await context.bot.send_document(
             chat_id=chat_id, document=file_name + ".png"
         )
-    except Exception:
+    except Exception as e:
         await context.bot.send_message(
-            chat_id=chat_id, text="Ошибка обработки"
+            chat_id=chat_id, text="Ошибка обработки:\n" + str(e)
         )
         return None
 
@@ -136,15 +137,22 @@ async def cancel_add_text_conversation(
     return ConversationHandler.END
 
 
+async def set_font(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    file = await context.bot.get_file(update.message.document)
+    file_name = "files/font_" + str(update.effective_chat.id) + ".ttf"
+    chat_id = update.effective_chat.id
+    await file.download_to_drive(file_name)
+    await context.bot.send_message(chat_id=chat_id, text="Файл получен")
+    db.db.font = file_name
+    return ConversationHandler.END
+
+
 if __name__ == "__main__":
     application = ApplicationBuilder().token(TOKEN).build()
 
-    file_handler = MessageHandler(filters.Document.ALL, file_handler)
-    application.add_handler(file_handler)
-
-    photo_handler_instance = MessageHandler(filters.PHOTO, photo_handler)
-    application.add_handler(photo_handler_instance)
-
+    """
+    Work with bot.
+    """
     add_admin_handler = CommandHandler("login", add_admin_to_db)
     application.add_handler(add_admin_handler)
 
@@ -168,6 +176,23 @@ if __name__ == "__main__":
         fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
     )
     application.add_handler(remove_text_conversation)
+
+    set_font_handler = ConversationHandler(
+        entry_points=[CommandHandler("setfont", ask_for_rights)],
+        states={TEXT_STATE: [MessageHandler(filters.Document.ALL, set_font)]},
+        fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
+    )
+    application.add_handler(set_font_handler)
+
+    """
+    Work with user.
+    """
+
+    file_handler = MessageHandler(filters.Document.ALL, file_handler)
+    application.add_handler(file_handler)
+
+    photo_handler_instance = MessageHandler(filters.PHOTO, photo_handler)
+    application.add_handler(photo_handler_instance)
 
     """
     For unknown:
