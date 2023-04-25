@@ -24,16 +24,27 @@ async def unknown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_file(
     file, update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-    file_name = "files/" + str(update.effective_chat.id)
-    chat_id = update.effective_chat.id
-    await file.download_to_drive(file_name)
-    await context.bot.send_message(chat_id=chat_id, text="Файл получен")
+    try:
+        file_name = "files/" + str(update.effective_chat.id)
+        chat_id = update.effective_chat.id
+        await file.download_to_drive(file_name)
+        await context.bot.send_message(chat_id=chat_id, text="Файл получен")
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка получения файла:\n" + str(e)
+        )
+        return None
 
     try:
         put_text(file_name)
-        await context.bot.send_document(
-            chat_id=chat_id, document=file_name + ".png"
-        )
+        if db.db.sendType == "document":
+            await context.bot.send_document(
+                chat_id=chat_id, document=file_name + ".png"
+            )
+        else:
+            await context.bot.send_photo(
+                chat_id=chat_id, photo=open(file_name + ".png", "rb")
+            )
     except Exception as e:
         await context.bot.send_message(
             chat_id=chat_id, text="Ошибка обработки:\n" + str(e)
@@ -52,15 +63,25 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def add_admin_to_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.message.from_user["id"]
-    password = " ".join(context.args)
-    chat_id = update.effective_chat.id
+    try:
+        uid = update.message.from_user["id"]
+        password = " ".join(context.args)
+        chat_id = update.effective_chat.id
 
-    if password == PASSWORD:
-        admins.append(uid)
-        await context.bot.send_message(chat_id=chat_id, text="Теперь вы админ")
-    else:
-        await context.bot.send_message(chat_id=chat_id, text="Неверный пароль")
+        if password == PASSWORD:
+            admins.append(uid)
+            await context.bot.send_message(
+                chat_id=chat_id, text="Теперь вы админ"
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=chat_id, text="Неверный пароль"
+            )
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return None
 
 
 async def print_help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -72,8 +93,13 @@ async def print_help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         info += "пользователь"
     info += "\n"
-    info += "/login - для авторизации админов\n"
+    info += "/login {пароль} - для авторизации админов\n"
     info += "/help - вся информация\n"
+    info += "/add - добавить текст в базу данных\n"
+    info += "/remove - удалить текст из базы данных\n"
+    info += "/setfont - загрузить шрифт\n"
+    info += "/setfontsize - установить размер шрифта\n"
+    info += "/setsendtype - установить тип сообщения (photo или document)\n"
     await context.bot.send_message(chat_id=chat_id, text=info)
 
 
@@ -113,7 +139,38 @@ async def ask_for_rights_and_print_phrases(
 async def add_text_to_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
-    phrases.append(text)
+    for x in text.split("\n"):
+        phrases.append(x)
+
+    return ConversationHandler.END
+
+
+async def set_fontsize(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+
+    try:
+        db.db.fontsize = int(text)
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return ConversationHandler.END
+
+    return ConversationHandler.END
+
+
+async def set_sendtype(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+
+    try:
+        db.db.sendType = text
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return ConversationHandler.END
 
     return ConversationHandler.END
 
@@ -121,7 +178,14 @@ async def add_text_to_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def remove_text_from_db(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
-    index = int(update.message.text) - 1
+    chat_id = update.effective_chat.id
+    try:
+        index = int(update.message.text) - 1
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return ConversationHandler.END
 
     if index < 0 or index >= len(phrases):
         return ConversationHandler.END
@@ -138,13 +202,20 @@ async def cancel_add_text_conversation(
 
 
 async def set_font(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    file = await context.bot.get_file(update.message.document)
-    file_name = "files/font_" + str(update.effective_chat.id) + ".ttf"
     chat_id = update.effective_chat.id
-    await file.download_to_drive(file_name)
-    await context.bot.send_message(chat_id=chat_id, text="Файл получен")
-    db.db.font = file_name
-    return ConversationHandler.END
+
+    try:
+        file = await context.bot.get_file(update.message.document)
+        file_name = "files/font_" + str(update.effective_chat.id) + ".ttf"
+        await file.download_to_drive(file_name)
+        await context.bot.send_message(chat_id=chat_id, text="Файл получен")
+        db.db.font = file_name
+        return ConversationHandler.END
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return None
 
 
 if __name__ == "__main__":
@@ -183,6 +254,20 @@ if __name__ == "__main__":
         fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
     )
     application.add_handler(set_font_handler)
+
+    set_fontsize_handler = ConversationHandler(
+        entry_points=[CommandHandler("setfontsize", ask_for_rights)],
+        states={TEXT_STATE: [MessageHandler(filters.TEXT, set_fontsize)]},
+        fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
+    )
+    application.add_handler(set_fontsize_handler)
+
+    set_sendtype_handler = ConversationHandler(
+        entry_points=[CommandHandler("setsendtype", ask_for_rights)],
+        states={TEXT_STATE: [MessageHandler(filters.TEXT, set_sendtype)]},
+        fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
+    )
+    application.add_handler(set_sendtype_handler)
 
     """
     Work with user.
