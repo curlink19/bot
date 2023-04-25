@@ -100,6 +100,7 @@ async def print_help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info += "/setfont - загрузить шрифт\n"
     info += "/setfontsize - установить размер шрифта\n"
     info += "/setsendtype - установить тип сообщения (photo или document)\n"
+    info += "/cancel - отмена команды\n"
     await context.bot.send_message(chat_id=chat_id, text=info)
 
 
