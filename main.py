@@ -24,9 +24,12 @@ async def unknown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_file(
     file, update: Update, context: ContextTypes.DEFAULT_TYPE
 ):
+    chat_id = update.effective_chat.id
+    uid = update.message.from_user["id"]
     try:
+        if uid not in db.db.position:
+            db.db.position[uid] = (0.3, 0.7)
         file_name = "files/" + str(update.effective_chat.id)
-        chat_id = update.effective_chat.id
         await file.download_to_drive(file_name)
         await context.bot.send_message(chat_id=chat_id, text="Файл получен")
     except Exception as e:
@@ -36,7 +39,7 @@ async def handle_file(
         return None
 
     try:
-        put_text(file_name)
+        put_text(file_name, db.db.position[uid])
         if db.db.sendType == "document":
             await context.bot.send_document(
                 chat_id=chat_id, document=file_name + ".png"
@@ -101,6 +104,9 @@ async def print_help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info += "/setfontsize - установить размер шрифта\n"
     info += "/setsendtype - установить тип сообщения (photo или document)\n"
     info += "/cancel - отмена команды\n"
+    info += (
+        "/setposition - установить место для текста (x, y), x и y в [0, 1]\n"
+    )
     await context.bot.send_message(chat_id=chat_id, text=info)
 
 
@@ -140,8 +146,17 @@ async def ask_for_rights_and_print_phrases(
 async def add_text_to_db(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
+    def convert_(s):
+        res = ""
+        for i in range(len(s)):
+            if s[i] == "$":
+                res += "\n"
+            else:
+                res += str(s[i])
+        return res
+
     for x in text.split("\n"):
-        phrases.append(x)
+        phrases.append(convert_(x))
 
     return ConversationHandler.END
 
@@ -159,6 +174,30 @@ async def set_fontsize(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     return ConversationHandler.END
+
+
+async def set_position(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+    uid = update.message.from_user["id"]
+
+    try:
+        vals = text.split(" ")
+        x, y = float(vals[0]), float(vals[1])
+        assert 0 <= x <= 1 and 0 <= y <= 1, "x и y должны лежать в [0, 1]"
+        db.db.position[uid] = (x, y)
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return ConversationHandler.END
+
+    await context.bot.send_message(chat_id=chat_id, text="готово")
+    return ConversationHandler.END
+
+
+async def do_nothing(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    return TEXT_STATE
 
 
 async def set_sendtype(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -262,6 +301,13 @@ if __name__ == "__main__":
         fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
     )
     application.add_handler(set_fontsize_handler)
+
+    set_position_handler = ConversationHandler(
+        entry_points=[CommandHandler("setposition", do_nothing)],
+        states={TEXT_STATE: [MessageHandler(filters.TEXT, set_position)]},
+        fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
+    )
+    application.add_handler(set_position_handler)
 
     set_sendtype_handler = ConversationHandler(
         entry_points=[CommandHandler("setsendtype", ask_for_rights)],

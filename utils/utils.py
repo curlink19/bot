@@ -5,10 +5,9 @@ import numpy as np
 
 
 ###############################################################################
-PLACE = (0.3, 0.7)  # (x, y) of (1, 1)
 
 
-def put_text(file_name):
+def put_text(file_name, PLACE):
     global TEXT_SIZE
     img = Image.open(file_name)
     graphics = ImageDraw.Draw(img)
