@@ -28,7 +28,9 @@ async def handle_file(
     uid = update.message.from_user["id"]
     try:
         if uid not in db.db.position:
-            db.db.position[uid] = (0.3, 0.7)
+            db.db.position[uid] = (0.025, 0.9)
+        if uid not in db.db.positionAuto:
+            db.db.positionAuto[uid] = False
         file_name = "files/" + str(update.effective_chat.id)
         await file.download_to_drive(file_name)
         await context.bot.send_message(chat_id=chat_id, text="Файл получен")
@@ -39,7 +41,7 @@ async def handle_file(
         return None
 
     try:
-        put_text(file_name, db.db.position[uid])
+        put_text(file_name, db.db.position[uid], db.db.positionAuto[uid])
         if db.db.sendType == "document":
             await context.bot.send_document(
                 chat_id=chat_id, document=file_name + ".png"
@@ -96,6 +98,10 @@ async def print_help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         info += "пользователь"
     info += "\n"
+    if (uid in db.db.positionAuto) and db.db.positionAuto[uid]:
+        info += "текст ставится автоматически\n"
+    else:
+        info += "текст ставится по настройке\n"
     info += "/login {пароль} - для авторизации админов\n"
     info += "/help - вся информация\n"
     info += "/add - добавить текст в базу данных\n"
@@ -107,6 +113,9 @@ async def print_help_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info += (
         "/setposition - установить место для текста (x, y), x и y в [0, 1]\n"
     )
+    info += "/setauto - установить автоматический режим установки текста\n"
+    info += "/unsetauto - установить ручной режим установки текста\n"
+    info += "/setindent - установить отступ снизу (число в отрезке [0, 1])\n"
     await context.bot.send_message(chat_id=chat_id, text=info)
 
 
@@ -186,6 +195,26 @@ async def set_position(update: Update, context: ContextTypes.DEFAULT_TYPE):
         x, y = float(vals[0]), float(vals[1])
         assert 0 <= x <= 1 and 0 <= y <= 1, "x и y должны лежать в [0, 1]"
         db.db.position[uid] = (x, y)
+        if uid not in db.db.positionAuto:
+            db.db.positionAuto[uid] = False
+    except Exception as e:
+        await context.bot.send_message(
+            chat_id=chat_id, text="Ошибка: \n" + str(e)
+        )
+        return ConversationHandler.END
+
+    await context.bot.send_message(chat_id=chat_id, text="готово")
+    return ConversationHandler.END
+
+
+async def set_indent(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    chat_id = update.effective_chat.id
+
+    try:
+        x = float(text)
+        assert 0 <= x <= 1, "должен лежать в [0, 1]"
+        db.db.indent = x
     except Exception as e:
         await context.bot.send_message(
             chat_id=chat_id, text="Ошибка: \n" + str(e)
@@ -198,6 +227,18 @@ async def set_position(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def do_nothing(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return TEXT_STATE
+
+
+async def set_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.message.from_user["id"]
+    db.db.positionAuto[uid] = True
+    return None
+
+
+async def unset_auto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.message.from_user["id"]
+    db.db.positionAuto[uid] = False
+    return None
 
 
 async def set_sendtype(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -270,12 +311,25 @@ if __name__ == "__main__":
     print_help_info_handler = CommandHandler("help", print_help_info)
     application.add_handler(print_help_info_handler)
 
+    set_auto_handler = CommandHandler("setauto", set_auto)
+    application.add_handler(set_auto_handler)
+
+    unset_auto_handler = CommandHandler("unsetauto", unset_auto)
+    application.add_handler(unset_auto_handler)
+
     add_text_conversation = ConversationHandler(
         entry_points=[CommandHandler("add", ask_for_rights)],
         states={TEXT_STATE: [MessageHandler(filters.TEXT, add_text_to_db)]},
         fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
     )
     application.add_handler(add_text_conversation)
+
+    set_indent_handler = ConversationHandler(
+        entry_points=[CommandHandler("setindent", ask_for_rights)],
+        states={TEXT_STATE: [MessageHandler(filters.TEXT, set_indent)]},
+        fallbacks=[CommandHandler("cancel", cancel_add_text_conversation)],
+    )
+    application.add_handler(set_indent_handler)
 
     remove_text_conversation = ConversationHandler(
         entry_points=[
